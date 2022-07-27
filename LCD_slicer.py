@@ -10,6 +10,51 @@ cuda.select_device(0)
 stream = cuda.stream()
 
 
+# constants
+
+z_layer = 10
+
+# end constants
+
+
+from parallel_prefix_sum import *
+from cuda_functions import *
+from py_functions import *
+
+def makeImage(sparse_array_to_plot, sparse_img_coords, fn, subtractMin = False):
+    d_out_img = cuda.device_array((int(voxel_bounds[0]),int(voxel_bounds[1])), np.uint8) # final slicer image
+    d_sparse_scaled = cuda.device_array(int(sparse_array_to_plot.shape[0]), dtype=np.float32) 
+
+    threadsperblock = (32, 32) 
+    blockspergrid_x = math.ceil(d_out_img.shape[0] / threadsperblock[0])
+    blockspergrid_y = math.ceil(d_out_img.shape[1] / threadsperblock[1])
+    blockspergrid = (blockspergrid_x, blockspergrid_y)
+    initMatrix[blockspergrid, threadsperblock](d_out_img,0) #init matrix on GPU
+
+    result = np.zeros(1, dtype=np.float64)
+    threadsperblock = 128 # max for rtx2070
+    blockspergrid = (sparse_array_to_plot.shape[0] + (threadsperblock - 1)) // threadsperblock
+    get_max[blockspergrid,threadsperblock](result, sparse_array_to_plot)
+    array_max = result[0]
+    get_min[blockspergrid,threadsperblock](result, sparse_array_to_plot)
+    array_min = result[0]
+    print(array_min, array_max)
+    
+    threadsperblock = 128 #1024 # max for rtx2070
+    blockspergrid = (d_sparse_scaled.shape[0] + (threadsperblock - 1)) // threadsperblock
+    if (subtractMin):
+        normTo255[blockspergrid, threadsperblock](d_sparse_scaled, sparse_array_to_plot, array_min, array_max)
+    else:
+        normTo255[blockspergrid, threadsperblock](d_sparse_scaled, sparse_array_to_plot, 0, array_max)
+
+    threadsperblock = 128 #1024 # max for rtx2070
+    blockspergrid = (sparse_array_to_plot.shape[0] + (threadsperblock - 1)) // threadsperblock
+    sparse_to_img[blockspergrid, threadsperblock](d_out_img, d_sparse_scaled, sparse_img_coords)
+    out_img = d_out_img.copy_to_host(stream=stream)
+    stream.synchronize()
+    plt.imsave(fname=fn, arr=out_img, cmap='gray_r', format='png')
+
+
 filepath = 'C:/Resin/articulated-dragon-mcgybeer20211115-748-6f8p9f/mcgybeer/articulated-dragon-mcgybeer/Dragon_v2/' #'C:/VSCode/PythonTest/' #
 filename = 'Dragon_v2.stl' #'test.stl'# 'cube.stl'#
 mesh_raw = trimesh.load_mesh(filepath + filename)
@@ -39,7 +84,6 @@ voxel_bounds[1] += 5
 voxel_bounds[0] += voxel_bounds[0] % 2
 voxel_bounds[1] += voxel_bounds[1] % 2
 mesh.apply_transform(trimesh.transformations.translation_matrix([2.5,2.5,0])) # shift xy by half a pixel (+2px Boder), so pixel index coordinate is mid pixel
-z_layer = 10
 project_z0_matrix = [[1,0,0,0],[0,1,0,0],[0,0,1,-z_layer],[0,0,0,1]]
 slice = mesh.section(plane_origin=[0,0,z_layer], plane_normal=zaxis)
 slice_2D, to_3D = slice.to_planar(to_2D=project_z0_matrix, normal=zaxis, check=False)
@@ -201,7 +245,11 @@ initMatrix[blockspergrid, threadsperblock](d_pixel_to_surface_points_distances,0
 
 threadsperblock = 128
 blockspergrid = (d_pixel_to_surface_points_distances.shape[0] + (threadsperblock - 1)) // threadsperblock
-calc_pixel_to_surface_points_distances[blockspergrid, threadsperblock](d_pixel_to_surface_points_distances, d_pixel_to_surface_points, d_reduced_points_on_surface, d_reducedSparseImg)
+calc_pixel_to_surface_points_distances[blockspergrid, threadsperblock](d_pixel_to_surface_points_distances
+																		, d_pixel_to_surface_points
+																		, d_reduced_points_on_surface
+																		, d_reducedSparseImg
+																		, z_layer)
 
 
 d_surface_point_to_pixels_distances = cuda.device_array((d_surface_point_to_pixels.shape[0],d_surface_point_to_pixels.shape[1]), np.float32)
@@ -213,7 +261,11 @@ initMatrix[blockspergrid, threadsperblock](d_surface_point_to_pixels_distances,0
 
 threadsperblock = 128
 blockspergrid = (d_surface_point_to_pixels_distances.shape[0] + (threadsperblock - 1)) // threadsperblock
-calc_surface_point_to_pixels_distances[blockspergrid, threadsperblock](d_surface_point_to_pixels_distances, d_surface_point_to_pixels, d_reduced_points_on_surface, d_reducedSparseImg)
+calc_surface_point_to_pixels_distances[blockspergrid, threadsperblock](d_surface_point_to_pixels_distances
+																		, d_surface_point_to_pixels
+																		, d_reduced_points_on_surface
+																		, d_reducedSparseImg
+																		, z_layer)
 
 
 # init calculate exposure

@@ -442,7 +442,7 @@ def gather_surface_point_to_pixels(pixel_links, reduced_points_on_surface, image
 
 # d_sparse_pixel_neighbours_distances
 @cuda.jit(device=False)
-def calc_pixel_to_surface_points_distances(distances, pixel_links, reduced_points_on_surface, reducedSparseImg):
+def calc_pixel_to_surface_points_distances(distances, pixel_links, reduced_points_on_surface, reducedSparseImg, z_layer):
     idx = cuda.grid(1)
     nrows = distances.shape[0]
     if idx < nrows:
@@ -462,7 +462,7 @@ def calc_pixel_to_surface_points_distances(distances, pixel_links, reduced_point
 
 # d_sparse_relevant_pixels_distances
 @cuda.jit(device=False)
-def calc_surface_point_to_pixels_distances(distances, pixel_links, reduced_points_on_surface, reducedSparseImg):
+def calc_surface_point_to_pixels_distances(distances, pixel_links, reduced_points_on_surface, reducedSparseImg, z_layer):
     idx = cuda.grid(1)
     nrows = distances.shape[0]
     if idx < nrows:

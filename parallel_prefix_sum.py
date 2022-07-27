@@ -1,9 +1,9 @@
+#TODO make this work for arbitrary many levels (recursiv structure) and test with small scan_max_threads
+#TODO clean and optimize
+
 import numpy as np
 from numba import cuda
 import math
-
-#TODO make this work for arbitrary many levels (recursiv structure) and test with small scan_max_threads
-#TODO clean and optimize
 
 # CUDA parallel_prefix_sum (scan) with numba CUDA. 
 # https://developer.nvidia.com/gpugems/gpugems3/part-vi-gpu-computing/chapter-39-parallel-prefix-sum-scan-cuda
