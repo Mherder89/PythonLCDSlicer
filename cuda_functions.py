@@ -333,15 +333,15 @@ def findClosesPoints(out, sparseImg, z_layer, faces, vertices):
 @cuda.jit(device=False)
 def get_active_points(out_mask, d_points_on_surface):
     idx = cuda.grid(1)
-    nrows = d_points_on_surface.shape[0]
-    if idx < nrows:
+    idx_limit = d_points_on_surface.shape[0] # out_mask is 1 larger d_points_on_surface is if uneven
+    if idx < idx_limit:
         out_mask[idx] = d_points_on_surface[idx,1] >= 0
 
 # numba cuda is missing cudaMemcpy, so we ned this (slow) workaround to get the last value in d_points_mask. Be aware of extra zero at end cause maybe it was uneven.
 @cuda.jit(device=False)
 def get_mask_limit(incl_scanned_array, d_mask_limit):
-    d_mask_limit[0] = incl_scanned_array[incl_scanned_array.shape[0]-1]
-    d_mask_limit[1] = incl_scanned_array[incl_scanned_array.shape[0]]
+    d_mask_limit[0] = incl_scanned_array[incl_scanned_array.shape[0]-2]
+    d_mask_limit[1] = incl_scanned_array[incl_scanned_array.shape[0]-1]
 
 #since we can't mark the empty px with -1 (cause uint32) we need to use 0 and shift index by 1 in idx_matrix
 @cuda.jit(device=False)

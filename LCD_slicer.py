@@ -1,5 +1,7 @@
+# import os
+# os.environ["NUMBA_ENABLE_CUDASIM"] = "1" dont do this ... 
+
 import numpy as np
-import numba
 from numba import cuda
 from numba.core.errors import NumbaPerformanceWarning
 import warnings
@@ -29,15 +31,17 @@ d_image_to_index = cuda.device_array((int(voxel_bounds[0]),int(voxel_bounds[1]))
 def run_loop(mesh, voxel_bounds, d_img, d_img_1d, d_image_to_index):
 	global stop_loop
 	for z_layer in range(voxel_bounds[2]):
-
+ 
 		if (stop_loop):
 			print('Loop aborted by user')
 			break
 
 		print(z_layer, voxel_bounds[2])
-		if (z_layer < 1 or z_layer > 10):
+		if (z_layer < 1 or z_layer < 210):
 			continue
-		# if (z_layer < 94):
+		# if (z_layer != 124 and z_layer != 123):
+		# 	continue
+		# if (z_layer != 94  and z_layer != 93 ): #
 		# 	continue
 		# if (z_layer != 209 and z_layer != 208):
 		# 	continue
@@ -75,10 +79,31 @@ def run_loop(mesh, voxel_bounds, d_img, d_img_1d, d_image_to_index):
 		# saveImage(d_img, 'img_infill_' + str(z_layer).zfill(4) + '.png')
 
 		# create new list without infill points and points that where to close 
+
+		# stream = cuda.stream()
+		# sparseImg_dump = d_sparseImg.copy_to_host(stream=stream)
+		# points_on_surface_dump = d_points_on_surface.copy_to_host(stream=stream)
+		# image_to_index_dump = d_image_to_index.copy_to_host(stream=stream)
+		# stream.synchronize()
+		# try:
 		d_reducedSparseImg, d_reduced_points_on_surface = reducePoints(d_sparseImg, d_points_on_surface, d_image_to_index)
+		# except Exception as inst:
+		# 	# dump relevant data to files
+		# 	np.savetxt("output/sparseImg_dump.txt", sparseImg_dump, delimiter =", ")
+		# 	np.savetxt("output/points_on_surface_dump.txt", points_on_surface_dump, delimiter =", ")
+		# 	np.savetxt("output/image_to_index_dump.txt", image_to_index_dump, delimiter =", ")
+		# 	print('Error in Layer ',z_layer)
+		# 	print(type(inst))
+		# 	break
+
 		d_sparseImg = None
 		d_points_on_surface = None
 		gc.collect()
+
+		d_out_img = cuda.device_array((int(d_img.shape[0]),int(d_img.shape[1])), np.uint8)
+		sparseImg_to_img(d_out_img, d_reducedSparseImg)
+		# saveImage(d_out_img, 'debug_' + str(z_layer).zfill(4) + '.png')
+		# break
 
 		# we need to know which surface points get light from which pixels and vice versa. For each connection we calculate the distance. This sets memory < recalculation.
 		d_pixel_to_surface_points, d_pixel_to_surface_points_distances, d_surface_point_to_pixels, d_surface_point_to_pixels_distances = createSparseDependencies(d_reducedSparseImg, d_reduced_points_on_surface, d_image_to_index, z_layer)
@@ -109,7 +134,7 @@ def run_loop(mesh, voxel_bounds, d_img, d_img_1d, d_image_to_index):
 		# print(numba.core.runtime.rtsys.get_allocation_stats())
 		meminfo = cuda.current_context().get_memory_info()
 		print("free: %s bytes, total, %s bytes" % (meminfo[0], meminfo[1]))
-		time.sleep(2)
+		time.sleep(0.001)
 	d_img = None
 	d_img_1d = None
 	d_image_to_index = None
