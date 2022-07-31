@@ -176,3 +176,4 @@ def scan_array(arr):
         threadsperblock = scan_max_threads
         blockspergrid = (arr.shape[0] + (threadsperblock - 1)) // threadsperblock
         scan_addBlockEnds[blockspergrid, threadsperblock](arr, d_block_sum)
+    d_block_sum = None

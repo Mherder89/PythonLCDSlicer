@@ -11,14 +11,31 @@ def initMatrix(out_matrix, val):
     if idx < nrows and idy < ncolls:
         out_matrix[idx, idy] = val
 
-@cuda.jit
+@cuda.jit(device=False)
+def initArray(out_array, val):
+    idx = cuda.grid(1)
+    nrows = out_array.shape[0]
+    if idx < nrows:
+        out_array[idx] = val
+
+@cuda.jit(device=False)
+def copy_reshape_img(img1D, img2D):
+	index = cuda.grid(1)
+	full_length = img1D.shape[0]
+	row_length = img2D.shape[1]
+	idy = index % row_length
+	idx = int(math.floor(index / row_length))
+	if index < full_length:
+		img1D[index] = img2D[idx, idy]
+
+@cuda.jit(device=False)
 def get_max(result, values):
     idx = cuda.grid(1)
     nrows = values.shape[0]
     if idx < nrows:
         cuda.atomic.max(result, 0, values[idx])
 
-@cuda.jit
+@cuda.jit(device=False)
 def get_min(result, values):
     idx = cuda.grid(1)
     nrows = values.shape[0]
@@ -90,14 +107,14 @@ def get_limit(some_array, out_limit):
     out_limit[0] = some_array[some_array.shape[0] - 1]
 
 @cuda.jit(device=False)
-def sliceImg_to_sparseImg(sliceImg, sparseImg, blocklength):
+def img_to_sparseImg(scanned_img_1d, sparseImg, blocklength):
     idx = cuda.grid(1)
-    nrows = sliceImg.shape[0]
-    if (idx == 0 and sliceImg[0] == 1): # first case extra cause idx-1 in elif bellow
+    nrows = scanned_img_1d.shape[0]
+    if (idx == 0 and scanned_img_1d[0] == 1): # first case extra cause idx-1 in elif bellow
         sparseImg[0] = (0, 0)
     elif idx < nrows:
-        if (sliceImg[idx-1] < sliceImg[idx]): # select only on step up
-            sparse_pixel_number = sliceImg[idx] - 1 # shift by 1 cause inclusiv sum
+        if (scanned_img_1d[idx-1] < scanned_img_1d[idx]): # select only on step up
+            sparse_pixel_number = scanned_img_1d[idx] - 1 # shift by 1 cause inclusiv sum
             sparseImg[sparse_pixel_number] = (int(math.floor(idx / blocklength)), idx % blocklength)
 
 @cuda.jit(device=False)
@@ -501,8 +518,6 @@ def distance_to_decay_factor(dist):
         return (f3-f2)/(d3-d2) *  (dist - d2) + f2
     else:
         return 0.0
-
-
 
 @cuda.jit(device=False)
 def init_sparse_pixel_exposure(exposure, points_on_surface, surface_point_to_pixels, surface_point_to_pixels_distances):
