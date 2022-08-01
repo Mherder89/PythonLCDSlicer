@@ -23,7 +23,7 @@ from parallel_prefix_sum import *
 from cuda_functions import *
 from py_functions import *
 
-mesh, voxel_bounds = initMesh(filedir + filename, scale_rel_to_buildplate = 0.4)
+mesh, voxel_bounds = initMesh(filedir + filename, scale = 0.5, scale_rel_to_buildplate = False, rotZ=0)
 d_img = cuda.device_array((int(voxel_bounds[0]),int(voxel_bounds[1])), np.int32) # final image
 d_img_1d = cuda.device_array((int(voxel_bounds[0]*voxel_bounds[1])), np.int32)
 d_image_to_index = cuda.device_array((int(voxel_bounds[0]),int(voxel_bounds[1])), np.int32)
@@ -36,18 +36,16 @@ def run_loop(mesh, voxel_bounds, d_img, d_img_1d, d_image_to_index):
 			print('Loop aborted by user')
 			break
 
-		print(z_layer, voxel_bounds[2])
-		if (z_layer < 1 or z_layer < 210):
+		if (z_layer == 0): # first layer has height != zero
 			continue
-		# if (z_layer != 124 and z_layer != 123):
-		# 	continue
-		# if (z_layer != 94  and z_layer != 93 ): #
-		# 	continue
-		# if (z_layer != 209 and z_layer != 208):
+
+		# if (z_layer > 1):
 		# 	continue
 
+		print(z_layer, voxel_bounds[2]) # progress report
+
 		# get a 2D svg vector path at z_layer
-		slice_path = getSlice(mesh, z_layer)
+		slice_path = getPath(mesh, z_layer)
 		# filledImg = slice_path.rasterize(pitch=1.0, origin=[0,0], resolution=voxel_bounds[0:2], fill=True, width=0)
 		# plt.imsave(fname='output/debug_' + str(z_layer).zfill(4) + '.png', arr=filledImg, cmap='gray_r', format='png')
 		# break

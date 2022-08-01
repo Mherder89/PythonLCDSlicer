@@ -8,34 +8,48 @@ from cuda_functions import *
 from parallel_prefix_sum import *
 
 #load mesh
-def initMesh(fpath, scale_rel_to_buildplate = 0.5):
+def initMesh(fpath, rotZ = 0, scale = 1, scale_rel_to_buildplate = False):
+
 	mesh_raw = trimesh.load_mesh(fpath)
 	mesh_raw.visual.face_colors = [100, 100, 100, 255] # give it a color
 	#mesh_raw.show(viewer='gl') # and show it
-
 	# transform mesh
 	origin, xaxis, yaxis, zaxis = [0, 0, 0], [1, 0, 0], [0, 1, 0], [0, 0, 1]
 	mesh_out = mesh_raw.copy()
-	transform, bounds = trimesh.bounds.oriented_bounds(mesh_out, angle_digits=1, ordered=False, normal=zaxis)
-	#mesh.apply_transform(trimesh.transformations.reflection_matrix(bounds/2.0, zaxis)) 
-	scale = min([3840.0,2400.0,4000.0]/bounds)*scale_rel_to_buildplate # min([10,10,10]/bounds) #
-	# voxel_bounds = scale*bounds
-	# voxel_bounds = np.ceil(voxel_bounds)
-	mesh_out.apply_transform(transform)
-	mesh_out.apply_transform(trimesh.transformations.translation_matrix(bounds/2.0))
+
+	# transform, bounds = trimesh.bounds.oriented_bounds(mesh_out, angle_digits=2, ordered=True, normal=zaxis)
+	# print(bounds)
+	# mesh_out.apply_transform(transform)
+	# mesh_out.apply_transform(trimesh.transformations.translation_matrix(bounds/2.0))
+	# mesh_out.apply_transform(trimesh.transformations.reflection_matrix([0,0,0],[-1,0,1]))
+
+	rotZ *= math.pi/180
+	Rz = trimesh.transformations.rotation_matrix(rotZ, zaxis)
+	mesh_out.apply_transform(Rz)
+
+	mesh_out.rezero()
+	bounds = [int(np.ceil(mesh_out.bounding_box.bounds[1,0])), int(np.ceil(mesh_out.bounding_box.bounds[1,1])), int(np.ceil(mesh_out.bounding_box.bounds[1,2]))]
+	if (scale_rel_to_buildplate):
+		scale *= min([3840.0/bounds[0],2400.0/bounds[1],4000.0/bounds[2]])
+	else:
+		scale *= 1.0/0.05
 	mesh_out.apply_transform(trimesh.transformations.scale_matrix(scale, origin))
+
+	# mesh_out.rezero()
 	# print(voxel_bounds)
 	# print(mesh.bounding_box.bounds)
 	bounds = [int(np.ceil(mesh_out.bounding_box.bounds[1,0])), int(np.ceil(mesh_out.bounding_box.bounds[1,1])), int(np.ceil(mesh_out.bounding_box.bounds[1,2]))]
-	# print(bounds)
+	print('bounds [px]: ', bounds)
+	print('bounds [mm]: ', np.asarray(bounds, dtype=np.float64) * 0.05)
 	bounds[0] += 5 # 2px left 3px right border
 	bounds[1] += 5 
 	bounds[0] += bounds[0] % 2
 	bounds[1] += bounds[1] % 2
-	mesh_out.apply_transform(trimesh.transformations.translation_matrix([2.5,2.5,0])) # shift xy by half a pixel (+2px Boder), so pixel index coordinate is mid pixel
+	# shift xy by 2 pixels for border and +0.5 , so pixel index coordinate is mid pixel
+	mesh_out.apply_transform(trimesh.transformations.translation_matrix([2.5, 2.5, 0])) # shift xy by half a pixel (+2px Boder), so pixel index coordinate is mid pixel
 	return mesh_out, bounds
 
-def getSlice(mesh, z_layer):
+def getPath(mesh, z_layer):
 	#cut layer
 	project_z0_matrix = [[1,0,0,0],[0,1,0,0],[0,0,1,-z_layer],[0,0,0,1]]
 	slice = mesh.section(plane_origin=[0,0,z_layer], plane_normal=[0, 0, 1])
@@ -97,7 +111,10 @@ def getThinSlice(mesh, z_layer):
 	# get closest point on faces
 	# copy data to device
 	sliceme = trimesh.intersections.slice_mesh_plane(mesh, plane_normal=[0, 0, -1], plane_origin=[0,0,z_layer])
-	sliceme = trimesh.intersections.slice_mesh_plane(sliceme, plane_normal=[0, 0, 1], plane_origin=[0,0,z_layer-3])
+	buttomcut = z_layer-3
+	if (buttomcut < 0.5):
+		buttomcut = 0.5
+	sliceme = trimesh.intersections.slice_mesh_plane(sliceme, plane_normal=[0, 0, 1], plane_origin=[0,0,buttomcut])
 	#sliceme.bounding_box.bounds
 	# print(sliceme.faces.shape)
 	sliceme.remove_degenerate_faces(height=1e-03) # remove and face with one side < height. < 1e-4 still has errors
@@ -264,7 +281,7 @@ def initExposure(d_reducedSparseImg, d_reduced_points_on_surface, d_pixel_to_sur
 	calc_surface_exposure[blockspergrid, threadsperblock](d_sparse_surface_exposure, d_sparse_pixel_exposure, d_surface_point_to_pixels, d_surface_point_to_pixels_distances)
 	cuda.synchronize()
 
-	result = np.zeros(1, dtype=np.float64)
+	result = np.zeros(1, dtype=np.float32)
 	cuda.device_array(int(d_reducedSparseImg.shape[0]), dtype=np.float32) 
 	threadsperblock = 128
 	blockspergrid = (d_sparse_surface_exposure.shape[0] + (threadsperblock - 1)) // threadsperblock
@@ -321,7 +338,7 @@ def copyExposureToFinalImg(d_out_img, d_sparse_pixel_exposure, d_reducedSparseIm
 
 def saveImage(d_out_img, fn):
 	out_img = d_out_img.copy_to_host()
-	plt.imsave(fname='output/' + fn, arr=out_img, cmap='gray_r', format='png')
+	plt.imsave(fname='output/' + fn, arr=out_img.transpose(), cmap='gray_r', format='png')
 
 def sparseImg_to_img(out_img, sparseImg):
 	threadsperblock = (32, 32) 
@@ -369,4 +386,4 @@ def makeImage(d_out_img, sparse_array_to_plot, sparse_img_coords, fn, subtractMi
 	cuda.synchronize()
 	d_sparse_scaled = None
 	out_img = d_out_img.copy_to_host()
-	plt.imsave(fname=fn, arr=out_img, cmap='gray_r', format='png')
+	plt.imsave(fname=fn, arr=out_img.transpose(), cmap='gray_r', format='png')
